@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <title>Filtr barev – PWA</title>
+  <style>
+    :root{
+      --bg:#000;
+      --panel:rgba(0,0,0,.55);
+      --panel2:rgba(18,18,18,.80);
+      --border:rgba(255,255,255,.18);
+      --text:#fff;
+    }
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+    .app{position:fixed;inset:0;overflow:hidden;background:#000;}
+    #view{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#000;}
+
+    /* Common button style */
+    .btn{
+      width:44px;height:44px;border-radius:12px;border:1px solid var(--border);
+      background:var(--panel); display:grid; place-items:center;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+      cursor:pointer; z-index:10; padding:0;
+    }
+
+    /* Hamburger (top-right) */
+    .hamburger{
+      position:absolute;
+      top: max(10px, env(safe-area-inset-top));
+      right: max(10px, env(safe-area-inset-right));
+    }
+    .hamburger .bars{width:20px;height:14px;display:flex;flex-direction:column;justify-content:space-between}
+    .hamburger .bars span{display:block;height:2px;border-radius:2px;background:#fff;opacity:.95}
+
+    /* Quality (top-left) */
+    .qualityBtn{
+      position:absolute;
+      top: max(10px, env(safe-area-inset-top));
+      left: max(10px, env(safe-area-inset-left));
+      font-weight:700;
+      letter-spacing:.2px;
+      font-size:12px;
+    }
+    .qualityBtn span{opacity:.95}
+
+    /* Info (top-center) */
+    .info{
+      position:absolute;
+      top: max(10px, env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(720px, calc(100vw - 20px - 2*54px));
+      max-width: calc(100vw - 20px - 2*54px);
+      background: var(--panel2);
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:16px;
+      padding:10px 12px;
+      z-index:9;
+      box-shadow:0 10px 30px rgba(0,0,0,.35);
+      backdrop-filter: blur(6px);
+      line-height:1.25;
+      font-size:13px;
+    }
+    .info .row{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:baseline;}
+    .info .k{opacity:.75; font-weight:600;}
+    .info .v{opacity:.98;}
+    .info .title{font-weight:800; margin-bottom:6px; font-size:14px;}
+    .chip{display:inline-block; padding:2px 8px; border:1px solid rgba(255,255,255,.14); border-radius:999px; background:rgba(255,255,255,.06); font-weight:700; font-size:12px;}
+    .muted{opacity:.80}
+
+    /* Menu overlay */
+    .overlay{
+      position:absolute; inset:0;
+      background:rgba(0,0,0,.55);
+      backdrop-filter: blur(6px);
+      display:none;
+      z-index:20;
+    }
+    .overlay.open{display:block;}
+    .menu{
+      position:absolute;
+      top: max(10px, env(safe-area-inset-top));
+      right: max(10px, env(safe-area-inset-right));
+      width:min(320px, calc(100vw - 20px));
+      border:1px solid var(--border);
+      border-radius:16px;
+      overflow:hidden;
+      background:rgba(18,18,18,.92);
+      box-shadow:0 10px 30px rgba(0,0,0,.5);
+    }
+    .menu button{
+      width:100%;
+      padding:14px 14px;
+      background:transparent;
+      border:0;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      color:#fff;
+      font-size:16px;
+      text-align:left;
+      cursor:pointer;
+    }
+    .menu button:last-child{border-bottom:0}
+    .menu button:active{background:rgba(255,255,255,.06)}
+
+    /* Quality menu overlay (separate, left) */
+    .qmenu{
+      position:absolute;
+      top: max(10px, env(safe-area-inset-top));
+      left: max(10px, env(safe-area-inset-left));
+      width:min(240px, calc(100vw - 20px));
+      border:1px solid var(--border);
+      border-radius:16px;
+      overflow:hidden;
+      background:rgba(18,18,18,.92);
+      box-shadow:0 10px 30px rgba(0,0,0,.5);
+    }
+
+    /* Bottom spectra */
+    .spectra{
+      position:absolute; left:0; right:0; bottom:0;
+      z-index:15; pointer-events:none;
+    }
+    .spec{width:100%; height:22px; display:block;}
+    .specWrap{
+      border-top:1px solid rgba(255,255,255,.10);
+      background:rgba(0,0,0,.45);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    video{display:none;}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <canvas id="view"></canvas>
+
+    <button class="btn qualityBtn" id="btnQuality" aria-label="Kvalita">
+      <span id="qualityLabel">K: S</span>
+    </button>
+
+    <div class="info" id="infoBox" aria-live="polite"></div>
+
+    <button class="btn hamburger" id="btnMenu" aria-label="Výběr poruchy">
+      <div class="bars" aria-hidden="true"><span></span><span></span><span></span></div>
+    </button>
+
+    <!-- Poruchy -->
+    <div class="overlay" id="overlayModes">
+      <div class="menu" role="menu" aria-label="Výběr poruchy barevného vidění">
+        <button data-mode="normal" role="menuitem">Normální vidění</button>
+        <button data-mode="protanopia" role="menuitem">Protanopie (porucha červené)</button>
+        <button data-mode="protanomaly" role="menuitem">Protanomálie (oslabená červená)</button>
+        <button data-mode="deuteranopia" role="menuitem">Deuteranopie (porucha zelené)</button>
+        <button data-mode="deuteranomaly" role="menuitem">Deuteranomálie (oslabená zelená)</button>
+        <button data-mode="tritanopia" role="menuitem">Tritanopie (porucha modré)</button>
+      </div>
+    </div>
+
+    <!-- Kvalita -->
+    <div class="overlay" id="overlayQuality">
+      <div class="qmenu" role="menu" aria-label="Výběr kvality">
+        <button data-q="low" role="menuitem">Nízká</button>
+        <button data-q="mid" role="menuitem">Střední</button>
+        <button data-q="high" role="menuitem">Vysoká</button>
+      </div>
+    </div>
+
+    <div class="spectra specWrap">
+      <canvas class="spec" id="specHealthy" width="1024" height="22"></canvas>
+      <canvas class="spec" id="specFiltered" width="1024" height="22"></canvas>
+    </div>
+
+    <video id="cam" playsinline autoplay muted></video>
+  </div>
+
+<script>
+(() => {
+  const video = document.getElementById('cam');
+  const canvas = document.getElementById('view');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  const btnMenu = document.getElementById('btnMenu');
+  const overlayModes = document.getElementById('overlayModes');
+
+  const btnQuality = document.getElementById('btnQuality');
+  const overlayQuality = document.getElementById('overlayQuality');
+  const qualityLabel = document.getElementById('qualityLabel');
+
+  const infoBox = document.getElementById('infoBox');
+
+  const specHealthy = document.getElementById('specHealthy');
+  const specFiltered = document.getElementById('specFiltered');
+  const specCtxH = specHealthy.getContext('2d', { willReadFrequently: true });
+  const specCtxF = specFiltered.getContext('2d', { willReadFrequently: true });
+
+  // --- Matice (aproximace) ---
+  const ID = [1,0,0, 0,1,0, 0,0,1];
+
+  const M = {
+    normal: ID,
+    protanopia: [
+      0.152286, 1.052583,-0.204868,
+      0.114503, 0.786281, 0.099216,
+     -0.003882,-0.048116, 1.051998
+    ],
+    deuteranopia: [
+      0.367322, 0.860646,-0.227968,
+      0.280085, 0.672501, 0.047413,
+     -0.011820, 0.042940, 0.968881
+    ],
+    tritanopia: [
+      1.255528,-0.076749,-0.178779,
+     -0.078411, 0.930809, 0.147602,
+      0.004733, 0.691367, 0.303900
+    ]
+  };
+
+  function lerp(a,b,t){ return a+(b-a)*t; }
+  function blendMatrix(base, t){
+    const out = new Array(9);
+    for(let i=0;i<9;i++) out[i] = lerp(ID[i], base[i], t);
+    return out;
+  }
+  M.protanomaly = blendMatrix(M.protanopia, 0.60);
+  M.deuteranomaly = blendMatrix(M.deuteranopia, 0.60);
+
+  // --- Popisy (info panel) ---
+  const coneIntro = {
+    title: 'Čípky v sítnici',
+    lines: [
+      'S-čípky: citlivé hlavně na modrou (krátké vlnové délky).',
+      'M-čípky: citlivé hlavně na zelenou (střední vlnové délky).',
+      'L-čípky: citlivé hlavně na červenou/žlutozelenou (dlouhé vlnové délky).'
+    ]
+  };
+
+  const modeInfo = {
+    normal: {
+      name: 'Normální vidění',
+      missing: 'Žádná porucha',
+      detail: 'S, M i L čípky fungují typicky.'
+    },
+    protanopia: {
+      name: 'Protanopie',
+      missing: 'Chybí L-čípky (červený kanál)',
+      detail: 'Červená se jeví tmavší; červená–zelená se často slévá do žlutavých/šedých odstínů.'
+    },
+    protanomaly: {
+      name: 'Protanomálie',
+      missing: 'L-čípky oslabené',
+      detail: 'Mírnější forma: horší rozlišení červené, menší sytost a posuny odstínů.'
+    },
+    deuteranopia: {
+      name: 'Deuteranopie',
+      missing: 'Chybí M-čípky (zelený kanál)',
+      detail: 'Typická „červeno‑zelená“ porucha: zelená a červená se pletou, odstíny se posouvají.'
+    },
+    deuteranomaly: {
+      name: 'Deuteranomálie',
+      missing: 'M-čípky oslabené',
+      detail: 'Nejčastější mírnější porucha: zhoršené rozlišování zelené vs. červené (méně syté barvy).'
+    },
+    tritanopia: {
+      name: 'Tritanopie',
+      missing: 'Chybí S-čípky (modrý kanál)',
+      detail: 'Pletou se modrá–žlutá; modrá může šednout, žlutá/zelaná se posouvá.'
+    }
+  };
+
+  function renderInfo(){
+    const info = modeInfo[mode] || modeInfo.normal;
+
+    // kompaktní, jasně strukturované
+    infoBox.innerHTML = `
+      <div class="title">${coneIntro.title} <span class="chip">${info.name}</span></div>
+      <div class="row">
+        <div class="k">S:</div><div class="v muted">modrá</div>
+        <div class="k">M:</div><div class="v muted">zelená</div>
+        <div class="k">L:</div><div class="v muted">červená</div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <div class="k">Stav:</div><div class="v">${info.missing}</div>
+      </div>
+      <div class="row" style="margin-top:4px">
+        <div class="v muted">${info.detail}</div>
+      </div>
+    `;
+  }
+
+  // --- Kvalita renderu ---
+  // low = rychlé (menší interní canvas), mid, high = plné rozlišení
+  const qualityPresets = {
+    low: 0.45,
+    mid: 0.70,
+    high: 1.00
+  };
+  let quality = localStorage.getItem('cvdQuality') || 'mid';
+
+  function qualityShort(q){
+    if(q === 'low') return 'N';
+    if(q === 'high') return 'V';
+    return 'S';
+  }
+
+  function setQuality(q){
+    quality = q;
+    localStorage.setItem('cvdQuality', quality);
+    qualityLabel.textContent = 'K: ' + qualityShort(quality);
+  }
+
+  // --- Aplikace matice ---
+  function clamp255(x){ return x < 0 ? 0 : (x > 255 ? 255 : x); }
+
+  function applyMatrixToImageData(imgData, mat){
+    const d = imgData.data;
+    for(let i=0; i<d.length; i+=4){
+      const r = d[i], g = d[i+1], b = d[i+2];
+      const r2 = mat[0]*r + mat[1]*g + mat[2]*b;
+      const g2 = mat[3]*r + mat[4]*g + mat[5]*b;
+      const b2 = mat[6]*r + mat[7]*g + mat[8]*b;
+      d[i]   = clamp255(r2);
+      d[i+1] = clamp255(g2);
+      d[i+2] = clamp255(b2);
+    }
+    return imgData;
+  }
+
+  function resizeCanvasToDisplaySize(){
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    const rect = canvas.getBoundingClientRect();
+
+    // renderScale podle kvality
+    const scale = qualityPresets[quality] ?? 0.70;
+
+    const w = Math.floor(rect.width * dpr * scale);
+    const h = Math.floor(rect.height * dpr * scale);
+
+    if(canvas.width !== w || canvas.height !== h){
+      canvas.width = w; canvas.height = h;
+    }
+
+    // canvas se stejně vykreslí přes CSS na celou obrazovku
+  }
+
+  function drawLoop(){
+    resizeCanvasToDisplaySize();
+
+    if(video.readyState >= 2){
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const mat = M[mode] || ID;
+      if(mode !== 'normal'){
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        applyMatrixToImageData(img, mat);
+        ctx.putImageData(img, 0, 0);
+      }
+    }
+    requestAnimationFrame(drawLoop);
+  }
+
+  async function startCamera(){
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+      requestAnimationFrame(drawLoop);
+    }catch(e){
+      console.error('Kamera nejde spustit:', e);
+    }
+  }
+
+  // --- Spektra ---
+  function hslToRgb(h, s, l){
+    let r, g, b;
+    if(s === 0){ r = g = b = l; }
+    else{
+      const hue2rgb = (p,q,t)=>{
+        if(t<0) t+=1; if(t>1) t-=1;
+        if(t<1/6) return p + (q-p)*6*t;
+        if(t<1/2) return q;
+        if(t<2/3) return p + (q-p)*(2/3 - t)*6;
+        return p;
+      };
+      const q = l < 0.5 ? l * (1 + s) : l + s - l*s;
+      const p = 2*l - q;
+      r = hue2rgb(p,q,h+1/3);
+      g = hue2rgb(p,q,h);
+      b = hue2rgb(p,q,h-1/3);
+    }
+    return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+  }
+
+  function drawHealthySpectrum(){
+    const w = specHealthy.width, h = specHealthy.height;
+    const img = specCtxH.createImageData(w, h);
+    const d = img.data;
+    for(let x=0; x<w; x++){
+      const hue = (x/(w-1)) * 360;
+      const rgb = hslToRgb(hue/360, 1, 0.5);
+      for(let y=0; y<h; y++){
+        const i = (y*w + x) * 4;
+        d[i] = rgb[0]; d[i+1] = rgb[1]; d[i+2] = rgb[2]; d[i+3] = 255;
+      }
+    }
+    specCtxH.putImageData(img, 0, 0);
+  }
+
+  function drawFilteredSpectrum(){
+    const w = specFiltered.width, h = specFiltered.height;
+    const img = specCtxH.getImageData(0, 0, w, h);
+    const mat = M[mode] || ID;
+    if(mode !== 'normal') applyMatrixToImageData(img, mat);
+    specCtxF.putImageData(img, 0, 0);
+  }
+
+  function setMode(newMode){
+    mode = newMode;
+    localStorage.setItem('cvdMode', mode);
+    drawFilteredSpectrum();
+    renderInfo();
+  }
+
+  // --- Menu ovládání (poruchy) ---
+  btnMenu.addEventListener('click', () => overlayModes.classList.add('open'));
+  overlayModes.addEventListener('click', (e) => { if(e.target === overlayModes) overlayModes.classList.remove('open'); });
+  overlayModes.querySelectorAll('button[data-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setMode(btn.dataset.mode);
+      overlayModes.classList.remove('open');
+    });
+  });
+
+  // --- Menu ovládání (kvalita) ---
+  btnQuality.addEventListener('click', () => overlayQuality.classList.add('open'));
+  overlayQuality.addEventListener('click', (e) => { if(e.target === overlayQuality) overlayQuality.classList.remove('open'); });
+  overlayQuality.querySelectorAll('button[data-q]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      setQuality(btn.dataset.q);
+      overlayQuality.classList.remove('open');
+    });
+  });
+
+  // PWA SW
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    });
+  }
+
+  // Init
+  let mode = localStorage.getItem('cvdMode') || 'normal';
+  setQuality(localStorage.getItem('cvdQuality') || 'mid');
+
+  drawHealthySpectrum();
+  drawFilteredSpectrum();
+  renderInfo();
+  startCamera();
+
+  window.addEventListener('resize', () => {
+    drawHealthySpectrum();
+    drawFilteredSpectrum();
+  });
+})();
+</script>
+</body>
+</html>
