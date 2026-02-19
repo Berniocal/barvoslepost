@@ -46,30 +46,52 @@
     }
     .qualityBtn span{opacity:.95}
 
-    /* Info (top-center) */
-    .info{
+    /* Info button (top-center) */
+    .infoBtn{
       position:absolute;
       top: max(10px, env(safe-area-inset-top));
       left: 50%;
       transform: translateX(-50%);
-      width: min(720px, calc(100vw - 20px - 2*54px));
-      max-width: calc(100vw - 20px - 2*54px);
+      width:44px;height:44px;border-radius:999px;
+      border:1px solid var(--border);
+      background:var(--panel);
+      display:grid;place-items:center;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+      cursor:pointer;
+      z-index:10;
+      padding:0;
+      font-weight:900;
+      font-size:16px;
+      line-height:1;
+    }
+    .infoBtn span{transform: translateY(-1px);}
+
+    .infoPanel{
+      position:absolute;
+      top: calc(max(10px, env(safe-area-inset-top)) + 54px);
+      left:50%;
+      transform:translateX(-50%);
+      width:min(720px, calc(100vw - 20px));
       background: var(--panel2);
       border:1px solid rgba(255,255,255,.12);
       border-radius:16px;
-      padding:10px 12px;
-      z-index:9;
-      box-shadow:0 10px 30px rgba(0,0,0,.35);
-      backdrop-filter: blur(6px);
+      padding:12px 14px;
+      z-index:21;
+      box-shadow:0 10px 30px rgba(0,0,0,.45);
+      backdrop-filter: blur(8px);
       line-height:1.25;
       font-size:13px;
+      max-height: min(60vh, 520px);
+      overflow:auto;
     }
-    .info .row{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:baseline;}
-    .info .k{opacity:.75; font-weight:600;}
-    .info .v{opacity:.98;}
-    .info .title{font-weight:800; margin-bottom:6px; font-size:14px;}
-    .chip{display:inline-block; padding:2px 8px; border:1px solid rgba(255,255,255,.14); border-radius:999px; background:rgba(255,255,255,.06); font-weight:700; font-size:12px;}
-    .muted{opacity:.80}
+    .infoPanel .title{font-weight:900; margin:0 0 10px 0; font-size:15px;}
+    .infoPanel .section{margin:10px 0 0 0;}
+    .infoPanel .section h4{margin:0 0 6px 0; font-size:13px; opacity:.92}
+    .infoPanel ul{margin:6px 0 0 18px; padding:0}
+    .infoPanel li{margin:4px 0}
+    .chip{display:inline-block; padding:2px 8px; border:1px solid rgba(255,255,255,.14); border-radius:999px; background:rgba(255,255,255,.06); font-weight:800; font-size:12px;}
+    .muted{opacity:.82}
 
     /* Menu overlay */
     .overlay{
@@ -140,10 +162,14 @@
     <button class="btn qualityBtn" id="btnQuality" aria-label="Kvalita">
       <span id="qualityLabel">K: S</span>
     </button>
+    <button class="infoBtn" id="btnInfo" aria-label="Informace">
+      <span>i</span>
+    </button>
 
-    <div class="info" id="infoBox" aria-live="polite"></div>
-
-    <button class="btn hamburger" id="btnMenu" aria-label="Výběr poruchy">
+    <div class="overlay" id="overlayInfo" aria-hidden="true">
+      <div class="infoPanel" id="infoBox" role="dialog" aria-label="Informace o čípcích a poruchách barevného vidění"></div>
+    </div>
+<button class="btn hamburger" id="btnMenu" aria-label="Výběr poruchy">
       <div class="bars" aria-hidden="true"><span></span><span></span><span></span></div>
     </button>
 
@@ -190,6 +216,8 @@
   const qualityLabel = document.getElementById('qualityLabel');
 
   const infoBox = document.getElementById('infoBox');
+  const btnInfo = document.getElementById('btnInfo');
+  const overlayInfo = document.getElementById('overlayInfo');
 
   const specHealthy = document.getElementById('specHealthy');
   const specFiltered = document.getElementById('specFiltered');
@@ -273,19 +301,38 @@
   function renderInfo(){
     const info = modeInfo[mode] || modeInfo.normal;
 
-    // kompaktní, jasně strukturované
     infoBox.innerHTML = `
-      <div class="title">${coneIntro.title} <span class="chip">${info.name}</span></div>
-      <div class="row">
-        <div class="k">S:</div><div class="v muted">modrá</div>
-        <div class="k">M:</div><div class="v muted">zelená</div>
-        <div class="k">L:</div><div class="v muted">červená</div>
+      <div class="title">Poruchy barevného vidění <span class="chip">${info.name}</span></div>
+
+      <div class="section">
+        <h4>Jaké čípky máme (a „které barvy hlídají“)</h4>
+        <ul>
+          <li><b>S-čípky</b> (short) – citlivé hlavně na <b>modrou</b> (krátké vlnové délky).</li>
+          <li><b>M-čípky</b> (medium) – citlivé hlavně na <b>zelenou</b> (střední vlnové délky).</li>
+          <li><b>L-čípky</b> (long) – citlivé hlavně na <b>červenou</b> / žlutozelené odstíny (dlouhé vlnové délky).</li>
+        </ul>
+        <div class="muted" style="margin-top:6px">
+          Mozek porovnává signály S/M/L – když jeden typ chybí nebo je posunutý/oslabený, některé odstíny se začnou „slévat“.
+        </div>
       </div>
-      <div class="row" style="margin-top:6px">
-        <div class="k">Stav:</div><div class="v">${info.missing}</div>
+
+      <div class="section">
+        <h4>Vybraná porucha</h4>
+        <ul>
+          <li><b>Stav čípků:</b> ${info.missing}</li>
+          <li><b>Typický dopad:</b> ${info.detail}</li>
+        </ul>
       </div>
-      <div class="row" style="margin-top:4px">
-        <div class="v muted">${info.detail}</div>
+
+      <div class="section">
+        <h4>Přehled poruch (pro srovnání)</h4>
+        <ul>
+          <li><b>Protanopie:</b> chybí L-čípky → červená bývá tmavší, červená–zelená se plete.</li>
+          <li><b>Protanomálie:</b> L-čípky oslabené/posunuté → mírnější posuny červené, menší sytost.</li>
+          <li><b>Deuteranopie:</b> chybí M-čípky → červeno‑zelené odstíny se často slévají.</li>
+          <li><b>Deuteranomálie:</b> M-čípky oslabené/posunuté → nejčastější mírnější varianta červeno‑zelené poruchy.</li>
+          <li><b>Tritanopie:</b> chybí S-čípky → plete se modrá–žlutá, modrá může „šednout“.</li>
+        </ul>
       </div>
     `;
   }
@@ -293,8 +340,8 @@
   // --- Kvalita renderu ---
   // low = rychlé (menší interní canvas), mid, high = plné rozlišení
   const qualityPresets = {
-    low: 0.45,
-    mid: 0.70,
+    low: 0.30,
+    mid: 0.55,
     high: 1.00
   };
   let quality = localStorage.getItem('cvdQuality') || 'mid';
@@ -444,6 +491,16 @@
       setQuality(btn.dataset.q);
       overlayQuality.classList.remove('open');
     });
+  });
+
+  
+  // --- Info panel ---
+  btnInfo.addEventListener('click', () => overlayInfo.classList.add('open'));
+  overlayInfo.addEventListener('click', (e) => { if(e.target === overlayInfo) overlayInfo.classList.remove('open'); });
+
+  // zavřít info i tlačítkem „Zpět“ na Androidu (ESC na klávesnici)
+  window.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape') overlayInfo.classList.remove('open');
   });
 
   // PWA SW
