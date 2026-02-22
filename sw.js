@@ -1,4 +1,4 @@
-const CACHE = 'cvd-pwa-v5';
+const CACHE = 'cvd-pwa-v6';
 const ASSETS = [
   './',
   './index.html',
