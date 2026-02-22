@@ -16,7 +16,7 @@
     }
     html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
     .app{position:fixed;inset:0;overflow:hidden;background:#000;}
-    #view{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#000;}
+    #view{position:absolute; inset:0; width:100vw; height:100vh; background:#000;}
 
     /* Common button style */
     .btn{
@@ -204,6 +204,7 @@
 
 <script>
 (() => {
+  let loopStarted = false;
   const video = document.getElementById('cam');
   const canvas = document.getElementById('view');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -340,8 +341,8 @@
   // --- Kvalita renderu ---
   // low = rychlé (menší interní canvas), mid, high = plné rozlišení
   const qualityPresets = {
-    low: 0.30,
-    mid: 0.55,
+    low: 0.45,
+    mid: 0.70,
     high: 1.00
   };
   let quality = localStorage.getItem('cvdQuality') || 'mid';
@@ -408,18 +409,36 @@
     requestAnimationFrame(drawLoop);
   }
 
+  let currentStream = null;
+
   async function startCamera(){
+    // (re)start stream with an aspect ratio close to the viewport to avoid stretching
     try{
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
+      const vw = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+      const vh = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+      const ar = vw / vh;
+
+      if(currentStream){
+        currentStream.getTracks().forEach(t => t.stop());
+        currentStream = null;
+      }
+
+      currentStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          aspectRatio: { ideal: ar },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
         audio: false
       });
-      video.srcObject = stream;
+
+      video.srcObject = currentStream;
       await video.play();
-      requestAnimationFrame(drawLoop);
     }catch(e){
       console.error('Kamera nejde spustit:', e);
     }
+  }
   }
 
   // --- Spektra ---
@@ -503,6 +522,44 @@
     if(e.key === 'Escape') overlayInfo.classList.remove('open');
   });
 
+  let restartTimer = null;
+  const scheduleRestart = () => {
+    clearTimeout(restartTimer);
+    restartTimer = setTimeout(() => { startCamera(); }, 250);
+  };
+
+  
+  // --- Fullscreen (double-tap / double-click) ---
+  async function toggleFullscreen(){
+    try{
+      if(document.fullscreenElement){
+        await document.exitFullscreen();
+      }else{
+        await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      }
+    }catch(e){
+      console.error('Fullscreen error:', e);
+    }
+  }
+
+  canvas.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    toggleFullscreen();
+  });
+
+  let lastTap = 0;
+  canvas.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    const dt = now - lastTap;
+    if(dt > 0 && dt < 300){
+      e.preventDefault();
+      toggleFullscreen();
+      lastTap = 0;
+      return;
+    }
+    lastTap = now;
+  }, { passive: false });
+
   // PWA SW
   if('serviceWorker' in navigator){
     window.addEventListener('load', () => {
@@ -517,12 +574,14 @@
   drawHealthySpectrum();
   drawFilteredSpectrum();
   renderInfo();
-  startCamera();
+  startCamera().then(() => { if(!loopStarted){ loopStarted=true; requestAnimationFrame(drawLoop); } });
 
   window.addEventListener('resize', () => {
     drawHealthySpectrum();
     drawFilteredSpectrum();
   });
+  window.addEventListener('resize', scheduleRestart);
+  window.addEventListener('orientationchange', scheduleRestart);
 })();
 </script>
 </body>
