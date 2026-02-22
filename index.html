@@ -397,9 +397,26 @@
     resizeCanvasToDisplaySize();
 
     if(video.readyState >= 2){
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // Zachování poměru stran (bez deformace): video se vejde do plátna a případně vzniknou černé okraje
+const vw = video.videoWidth || 0;
+const vh = video.videoHeight || 0;
+const cw = canvas.width;
+const ch = canvas.height;
 
-      const mat = M[mode] || ID;
+// vyčistit pozadí (letterbox)
+ctx.clearRect(0, 0, cw, ch);
+ctx.fillStyle = '#000';
+ctx.fillRect(0, 0, cw, ch);
+
+if(vw > 0 && vh > 0){
+  const s = Math.min(cw / vw, ch / vh);
+  const dw = Math.round(vw * s);
+  const dh = Math.round(vh * s);
+  const dx = Math.round((cw - dw) / 2);
+  const dy = Math.round((ch - dh) / 2);
+  ctx.drawImage(video, dx, dy, dw, dh);
+}
+const mat = M[mode] || ID;
       if(mode !== 'normal'){
         const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
         applyMatrixToImageData(img, mat);
